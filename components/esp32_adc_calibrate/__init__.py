@@ -21,15 +21,75 @@ CONF_RESTORE_FROM_FLASH = "restore_from_flash"
 CONF_CALIBRATE_ON_FIRST_BOOT = "calibrate_on_first_boot"
 
 
+def _normalize_gpio_pin(value):
+    """
+    Accept GPIO pin notation such as GPIO32 / GPIO25.
+
+    ESPHome's pin schemas expect a pin configuration. Some ESPHome
+    versions do not accept the GPIOxx shorthand directly through
+    internal_gpio_*_pin_schema, so normalize GPIOxx to:
+
+        { "number": xx }
+
+    before passing the value to ESPHome's normal pin validation.
+    """
+
+    if isinstance(value, str):
+        value = value.strip()
+
+        if value.upper().startswith("GPIO"):
+            number = value[4:].strip()
+
+            if not number:
+                raise cv.Invalid(
+                    f"Invalid GPIO pin '{value}': missing GPIO number"
+                )
+
+            return {
+                "number": cv.int_(number),
+            }
+
+    if isinstance(value, dict):
+        value = value.copy()
+
+        if "number" in value and isinstance(value["number"], str):
+            number = value["number"].strip()
+
+            if number.upper().startswith("GPIO"):
+                number = number[4:].strip()
+
+                if not number:
+                    raise cv.Invalid(
+                        "Invalid GPIO pin: missing GPIO number"
+                    )
+
+                value["number"] = cv.int_(number)
+
+        return value
+
+    return value
+
+
+GPIO_INPUT_PIN_SCHEMA = cv.All(
+    _normalize_gpio_pin,
+    pins.internal_gpio_input_pin_schema,
+)
+
+GPIO_OUTPUT_PIN_SCHEMA = cv.All(
+    _normalize_gpio_pin,
+    pins.internal_gpio_output_pin_schema,
+)
+
+
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID():
         cv.declare_id(ESP32ADCComponent),
 
     cv.Required(CONF_ADC_PIN):
-        pins.internal_gpio_input_pin_schema,
+        GPIO_INPUT_PIN_SCHEMA,
 
     cv.Required(CONF_DAC_PIN):
-        pins.internal_gpio_output_pin_schema,
+        GPIO_OUTPUT_PIN_SCHEMA,
 
     cv.Optional(
         CONF_SAMPLES,
@@ -54,6 +114,7 @@ CONFIG_SCHEMA = cv.Schema({
         default=True,
     ):
         cv.boolean,
+
 }).extend(
     cv.polling_component_schema("1s")
 )
