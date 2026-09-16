@@ -129,8 +129,8 @@ The GPIOs are configurable through ESPHome substitutions.
 Example:
 
     substitutions:
-      adc_cal_pin: "35"
-      adc_cal_dac_pin: "25"
+      adc_cal_pin: GPIO35
+      adc_cal_dac_pin: GPIO25
 
       adc_cal_samples: "16"
       adc_cal_settle_ms: "5"
