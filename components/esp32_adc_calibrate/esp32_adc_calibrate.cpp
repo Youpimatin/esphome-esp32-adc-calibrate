@@ -4,6 +4,7 @@
 #include "esphome/core/preferences.h"
 
 #include <Arduino.h>
+#include <math.h>
 
 namespace esphome {
 namespace esp32_adc_calibrate {
@@ -11,12 +12,6 @@ namespace esp32_adc_calibrate {
 static const char *const TAG =
     "esp32_adc_calibrate";
 
-/*
- * Preference key.
- *
- * The LUT is stored through ESPHome's preference system,
- * so it survives reboot.
- */
 static constexpr uint32_t PREF_KEY =
     0xADC32535;
 
@@ -45,12 +40,12 @@ void ESP32ADCComponent::dump_config() {
 
   ESP_LOGCONFIG(
       TAG,
-      "  ADC resolution: 12 bit (0..4095)"
+      "  ADC resolution: 12 bit"
   );
 
   ESP_LOGCONFIG(
       TAG,
-      "  DAC resolution: 8 bit (0..255)"
+      "  DAC resolution: 8 bit"
   );
 
   ESP_LOGCONFIG(
@@ -90,15 +85,14 @@ void ESP32ADCComponent::setup() {
   );
 
   /*
-   * Classic ESP32 ADC:
-   * 12-bit resolution = 0..4095.
+   * Classic ESP32:
+   * ADC resolution = 12 bits = 0..4095.
    */
   analogReadResolution(12);
 
   /*
-   * Attenuation is deliberately part of the physical
-   * configuration. The LUT calibrates the resulting
-   * ADC codes, so no voltage conversion is needed.
+   * Keep the attenuation fixed for the calibration.
+   * The LUT operates entirely in raw ADC-code space.
    */
   analogSetPinAttenuation(
       this->adc_pin_,
@@ -106,7 +100,7 @@ void ESP32ADCComponent::setup() {
   );
 
   /*
-   * Try to restore the previously calibrated LUT.
+   * Try to restore an existing LUT.
    */
   if (
       this->restore_from_flash_ &&
@@ -116,7 +110,7 @@ void ESP32ADCComponent::setup() {
 
     ESP_LOGI(
         TAG,
-        "Valid calibration LUT restored from flash"
+        "Calibration LUT restored from flash"
     );
 
     return;
@@ -127,9 +121,6 @@ void ESP32ADCComponent::setup() {
       "No valid calibration LUT found"
   );
 
-  /*
-   * First boot calibration.
-   */
   if (
       this->calibrate_on_first_boot_
   ) {
@@ -139,12 +130,12 @@ void ESP32ADCComponent::setup() {
 
 
 /* -------------------------------------------------------------------------- */
-/* Main loop                                                                  */
+/* Periodic component                                                         */
 /* -------------------------------------------------------------------------- */
 
 void ESP32ADCComponent::update() {
   /*
-   * Calibration has priority over normal measurements.
+   * Calibration has priority.
    */
   if (
       this->calibration_requested_
@@ -160,7 +151,7 @@ void ESP32ADCComponent::update() {
 
     ESP_LOGI(
         TAG,
-        "Starting ADC/DAC calibration"
+        "Starting calibration"
     );
 
     const bool generated =
@@ -173,7 +164,7 @@ void ESP32ADCComponent::update() {
     }
 
     /*
-     * Never leave the DAC enabled after calibration.
+     * Never leave the DAC enabled.
      */
     dacDisable(
         this->dac_pin_
@@ -189,59 +180,24 @@ void ESP32ADCComponent::update() {
 
       ESP_LOGI(
           TAG,
-          "ADC/DAC calibration complete"
+          "Calibration complete"
       );
     } else {
+      this->calibrated_ = false;
+
       ESP_LOGE(
           TAG,
-          "ADC/DAC calibration failed"
+          "Calibration failed"
       );
     }
 
     return;
   }
-
-  /*
-   * No valid LUT -> no usable result.
-   */
-  if (
-      !this->calibrated_ ||
-      this->sensor_ == nullptr
-  ) {
-    return;
-  }
-
-  /*
-   * Read the physical ADC.
-   */
-  const uint16_t adc =
-      this->read_adc_average_();
-
-  /*
-   * Convert:
-   *
-   * ADC 12-bit
-   *     ↓
-   * LUT + interpolation
-   *     ↓
-   * equivalent DAC 8-bit
-   *
-   * The result remains a float so that the
-   * information between two DAC codes is preserved.
-   */
-  const float dac =
-      this->adc_to_dac_(
-          adc
-      );
-
-  this->sensor_->publish_state(
-      dac
-  );
 }
 
 
 /* -------------------------------------------------------------------------- */
-/* ADC measurement                                                             */
+/* ADC read                                                                   */
 /* -------------------------------------------------------------------------- */
 
 uint16_t ESP32ADCComponent::read_adc_average_() const {
@@ -267,6 +223,32 @@ uint16_t ESP32ADCComponent::read_adc_average_() const {
 
 
 /* -------------------------------------------------------------------------- */
+/* Public read()                                                              */
+/* -------------------------------------------------------------------------- */
+
+float ESP32ADCComponent::read() {
+  if (
+      !this->calibrated_
+  ) {
+    return NAN;
+  }
+
+  if (
+      this->calibrating_
+  ) {
+    return NAN;
+  }
+
+  const uint16_t adc =
+      this->read_adc_average_();
+
+  return this->adc_to_dac_(
+      adc
+  );
+}
+
+
+/* -------------------------------------------------------------------------- */
 /* Manual calibration                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -282,17 +264,17 @@ void ESP32ADCComponent::start_calibration() {
     return;
   }
 
+  this->calibration_requested_ = true;
+
   ESP_LOGI(
       TAG,
-      "Manual calibration requested"
+      "Calibration requested"
   );
-
-  this->calibration_requested_ = true;
 }
 
 
 /* -------------------------------------------------------------------------- */
-/* LUT generation                                                             */
+/* Generate LUT                                                               */
 /* -------------------------------------------------------------------------- */
 
 bool ESP32ADCComponent::generate_lut_() {
@@ -323,16 +305,14 @@ bool ESP32ADCComponent::generate_lut_() {
 
   uint16_t previous_adc = 0;
 
-  /*
-   * DAC = 0..255.
-   *
-   * Each DAC code gets its own measured ADC value.
-   */
   for (
       uint16_t dac = 0;
       dac <= DAC_MAX;
       dac++
   ) {
+    /*
+     * Output DAC code 0..255.
+     */
     dacWrite(
         this->dac_pin_,
         static_cast<uint8_t>(
@@ -341,83 +321,60 @@ bool ESP32ADCComponent::generate_lut_() {
     );
 
     /*
-     * Give the analog circuit time to settle.
+     * Let the analog signal settle.
      */
     delay(
         this->settle_ms_
     );
 
-    const uint16_t adc =
+    uint16_t adc =
         this->read_adc_average_();
 
-    uint16_t calibrated_adc =
-        adc;
-
     /*
-     * The inverse lookup assumes a monotonic
-     * DAC -> ADC curve.
+     * Ensure a monotonic DAC -> ADC curve.
      *
-     * ADC noise can cause an occasional decrease.
-     * Clamp it to preserve monotonicity.
+     * Small downward movements caused by noise
+     * are clamped.
      */
     if (
         dac > 0 &&
-        calibrated_adc < previous_adc
+        adc < previous_adc
     ) {
       ESP_LOGW(
           TAG,
           "Non-monotonic point DAC=%u: "
-          "ADC %u < previous %u, clamping",
+          "ADC=%u < previous=%u, clamping",
           dac,
-          calibrated_adc,
+          adc,
           previous_adc
       );
 
-      calibrated_adc =
+      adc =
           previous_adc;
     }
 
     this->lut_.adc[dac] =
-        calibrated_adc;
+        adc;
 
     previous_adc =
-        calibrated_adc;
+        adc;
 
     ESP_LOGD(
         TAG,
         "DAC=%u -> ADC=%u",
         dac,
-        calibrated_adc
+        adc
     );
   }
 
-  /*
-   * Turn the DAC off when finished.
-   */
   dacDisable(
       this->dac_pin_
   );
 
-  /*
-   * Calculate checksum after all LUT data
-   * has been generated.
-   */
   this->lut_.checksum =
       this->calculate_checksum_(
           this->lut_
       );
-
-  ESP_LOGI(
-      TAG,
-      "LUT generated successfully"
-  );
-
-  ESP_LOGI(
-      TAG,
-      "ADC range: %u .. %u",
-      this->lut_.adc[0],
-      this->lut_.adc[255]
-  );
 
   return true;
 }
@@ -431,7 +388,7 @@ float ESP32ADCComponent::adc_to_dac_(
     uint16_t adc
 ) const {
   /*
-   * Below the first measured point.
+   * Below the calibrated range.
    */
   if (
       adc <=
@@ -441,7 +398,7 @@ float ESP32ADCComponent::adc_to_dac_(
   }
 
   /*
-   * Above the last measured point.
+   * Above the calibrated range.
    */
   if (
       adc >=
@@ -451,20 +408,20 @@ float ESP32ADCComponent::adc_to_dac_(
   }
 
   /*
-   * Find the two DAC codes surrounding the
-   * measured ADC value.
+   * Search the two calibration points
+   * surrounding the ADC measurement.
    *
    * Example:
    *
-   * DAC 127 -> ADC 2028
-   * DAC 128 -> ADC 2044
+   * LUT[127] = 2028
+   * LUT[128] = 2044
    *
    * ADC = 2036
    *
-   * ratio = (2036 - 2028) / (2044 - 2028)
+   * ratio = 8 / 16
    *       = 0.5
    *
-   * DAC = 127.5
+   * result = 127.5
    */
   for (
       uint16_t dac = 1;
@@ -481,8 +438,7 @@ float ESP32ADCComponent::adc_to_dac_(
         adc <= adc1
     ) {
       /*
-       * Adjacent ADC values can be identical due
-       * to quantization or noise.
+       * Adjacent LUT values can be identical.
        */
       if (
           adc1 <= adc0
@@ -513,17 +469,12 @@ float ESP32ADCComponent::adc_to_dac_(
 
 
 /* -------------------------------------------------------------------------- */
-/* Flash checksum                                                             */
+/* Checksum                                                                   */
 /* -------------------------------------------------------------------------- */
 
 uint32_t ESP32ADCComponent::calculate_checksum_(
     const LUTStorage &lut
 ) const {
-  /*
-   * FNV-1a 32-bit.
-   *
-   * Exclude the checksum field itself.
-   */
   const uint8_t *data =
       reinterpret_cast<const uint8_t *>(
           &lut
@@ -533,6 +484,9 @@ uint32_t ESP32ADCComponent::calculate_checksum_(
       sizeof(LUTStorage) -
       sizeof(lut.checksum);
 
+  /*
+   * FNV-1a 32-bit.
+   */
   uint32_t hash =
       2166136261UL;
 
@@ -550,7 +504,7 @@ uint32_t ESP32ADCComponent::calculate_checksum_(
 
 
 /* -------------------------------------------------------------------------- */
-/* Flash save                                                                  */
+/* Save LUT                                                                   */
 /* -------------------------------------------------------------------------- */
 
 bool ESP32ADCComponent::save_lut_() {
@@ -567,7 +521,7 @@ bool ESP32ADCComponent::save_lut_() {
   ) {
     ESP_LOGE(
         TAG,
-        "Failed to save LUT to flash"
+        "Failed to save LUT"
     );
 
     return false;
@@ -583,7 +537,7 @@ bool ESP32ADCComponent::save_lut_() {
 
 
 /* -------------------------------------------------------------------------- */
-/* Flash load                                                                  */
+/* Load LUT                                                                   */
 /* -------------------------------------------------------------------------- */
 
 bool ESP32ADCComponent::load_lut_() {
@@ -628,8 +582,7 @@ bool ESP32ADCComponent::load_lut_() {
   }
 
   /*
-   * A LUT generated with different calibration
-   * parameters is not reused.
+   * Calibration parameters must match.
    */
   if (
       stored.samples !=
@@ -637,7 +590,7 @@ bool ESP32ADCComponent::load_lut_() {
   ) {
     ESP_LOGW(
         TAG,
-        "LUT sample count changed"
+        "LUT sample count mismatch"
     );
 
     return false;
@@ -649,12 +602,15 @@ bool ESP32ADCComponent::load_lut_() {
   ) {
     ESP_LOGW(
         TAG,
-        "LUT settle time changed"
+        "LUT settle time mismatch"
     );
 
     return false;
   }
 
+  /*
+   * Verify checksum.
+   */
   const uint32_t checksum =
       this->calculate_checksum_(
           stored
@@ -666,14 +622,14 @@ bool ESP32ADCComponent::load_lut_() {
   ) {
     ESP_LOGW(
         TAG,
-        "Invalid LUT checksum"
+        "LUT checksum invalid"
     );
 
     return false;
   }
 
   /*
-   * Validate monotonicity.
+   * Verify monotonicity.
    */
   for (
       uint16_t i = 1;
