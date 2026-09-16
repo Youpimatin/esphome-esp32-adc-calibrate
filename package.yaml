@@ -13,7 +13,7 @@ external_components:
       ref: main
     components:
       - esp32_adc_calibrate
-    refresh: 1d
+    refresh: 0s
 
 
 esp32_adc_calibrate:
