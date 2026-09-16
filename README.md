@@ -139,7 +139,7 @@ Then include the package:
 
     packages:
       adc_calibration:
-        url: https://github.com/TON_COMPTE/esphome-esp32-adc-calibrate
+        url: https://github.com/Youpimatin/esphome-esp32-adc-calibrate
         files:
           - path: package.yaml
         ref: main
