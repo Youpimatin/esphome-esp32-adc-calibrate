@@ -1,18 +1,16 @@
 #pragma once
 
 #include "esphome/core/component.h"
-#include "esphome/components/sensor/sensor.h"
 
 #include <stdint.h>
 
 namespace esphome {
 namespace esp32_adc_calibrate {
 
-static constexpr uint32_t LUT_MAGIC = 0x41444331;  // "ADC1"
+static constexpr uint32_t LUT_MAGIC = 0x41444331;
 static constexpr uint16_t LUT_VERSION = 1;
 
 static constexpr uint16_t DAC_MAX = 255;
-static constexpr uint16_t ADC_MAX = 4095;
 static constexpr uint16_t LUT_SIZE = 256;
 
 struct LUTStorage {
@@ -22,8 +20,10 @@ struct LUTStorage {
   uint16_t samples;
   uint16_t settle_ms;
 
-  // Index = DAC code 0..255
-  // Value = ADC raw value 0..4095
+  /*
+   * Index = DAC code 0..255
+   * Value = measured ADC code 0..4095
+   */
   uint16_t adc[LUT_SIZE];
 
   uint32_t checksum;
@@ -34,6 +34,30 @@ class ESP32ADCComponent : public PollingComponent {
   void setup() override;
   void update() override;
   void dump_config() override;
+
+  /*
+   * Returns the linearized value:
+   *
+   * ADC raw 0..4095
+   *       ↓
+   * LUT
+   *       ↓
+   * interpolation
+   *       ↓
+   * DAC equivalent 0.0..255.0
+   *
+   * Returns NAN if no valid LUT is available.
+   */
+  float read();
+
+  /*
+   * Request a new calibration.
+   */
+  void start_calibration();
+
+  bool is_calibrated() const {
+    return this->calibrated_;
+  }
 
   void set_adc_pin(uint8_t pin) {
     this->adc_pin_ = pin;
@@ -58,12 +82,6 @@ class ESP32ADCComponent : public PollingComponent {
   void set_calibrate_on_first_boot(bool value) {
     this->calibrate_on_first_boot_ = value;
   }
-
-  void set_sensor(sensor::Sensor *sensor) {
-    this->sensor_ = sensor;
-  }
-
-  void start_calibration();
 
  protected:
   bool generate_lut_();
@@ -94,8 +112,6 @@ class ESP32ADCComponent : public PollingComponent {
   bool calibration_requested_{false};
 
   LUTStorage lut_{};
-
-  sensor::Sensor *sensor_{nullptr};
 };
 
 }  // namespace esp32_adc_calibrate
