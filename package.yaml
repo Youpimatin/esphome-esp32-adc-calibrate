@@ -9,7 +9,7 @@ substitutions:
 external_components:
   - source:
       type: git
-      url: https://github.com/TON_COMPTE/esphome-esp32-adc-calibrate
+      url: https://github.com/Youpimatin/esphome-esp32-adc-calibrate
       ref: main
     components:
       - esp32_adc_calibrate
