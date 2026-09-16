@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esphome/core/component.h"
+#include "esphome/core/gpio.h"
 
 #include <stdint.h>
 
@@ -16,16 +17,9 @@ static constexpr uint16_t LUT_SIZE = 256;
 struct LUTStorage {
   uint32_t magic;
   uint16_t version;
-
   uint16_t samples;
   uint16_t settle_ms;
-
-  /*
-   * Index = DAC code 0..255
-   * Value = measured ADC code 0..4095
-   */
   uint16_t adc[LUT_SIZE];
-
   uint32_t checksum;
 };
 
@@ -35,35 +29,19 @@ class ESP32ADCComponent : public PollingComponent {
   void update() override;
   void dump_config() override;
 
-  /*
-   * Returns the linearized value:
-   *
-   * ADC raw 0..4095
-   *       ↓
-   * LUT
-   *       ↓
-   * interpolation
-   *       ↓
-   * DAC equivalent 0.0..255.0
-   *
-   * Returns NAN if no valid LUT is available.
-   */
   float read();
 
-  /*
-   * Request a new calibration.
-   */
   void start_calibration();
 
   bool is_calibrated() const {
     return this->calibrated_;
   }
 
-  void set_adc_pin(uint8_t pin) {
+  void set_adc_pin(InternalGPIOPin *pin) {
     this->adc_pin_ = pin;
   }
 
-  void set_dac_pin(uint8_t pin) {
+  void set_dac_pin(InternalGPIOPin *pin) {
     this->dac_pin_ = pin;
   }
 
@@ -98,8 +76,8 @@ class ESP32ADCComponent : public PollingComponent {
 
   uint16_t read_adc_average_() const;
 
-  uint8_t adc_pin_{35};
-  uint8_t dac_pin_{25};
+  InternalGPIOPin *adc_pin_{nullptr};
+  InternalGPIOPin *dac_pin_{nullptr};
 
   uint16_t samples_{16};
   uint16_t settle_ms_{5};
