@@ -1,6 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
+from esphome import pins
 from esphome.const import CONF_ID
 
 esp32_adc_calibrate_ns = cg.esphome_ns.namespace(
@@ -19,15 +20,16 @@ CONF_SETTLE_MS = "settle_ms"
 CONF_RESTORE_FROM_FLASH = "restore_from_flash"
 CONF_CALIBRATE_ON_FIRST_BOOT = "calibrate_on_first_boot"
 
+
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID():
         cv.declare_id(ESP32ADCComponent),
 
     cv.Required(CONF_ADC_PIN):
-        cv.int_range(min=0, max=39),
+        pins.internal_gpio_input_pin_schema,
 
     cv.Required(CONF_DAC_PIN):
-        cv.int_range(min=0, max=39),
+        pins.internal_gpio_output_pin_schema,
 
     cv.Optional(
         CONF_SAMPLES,
@@ -67,16 +69,20 @@ async def to_code(config):
         config,
     )
 
-    cg.add(
-        var.set_adc_pin(
-            config[CONF_ADC_PIN]
-        )
+    adc_pin = await cg.gpio_pin_expression(
+        config[CONF_ADC_PIN]
+    )
+
+    dac_pin = await cg.gpio_pin_expression(
+        config[CONF_DAC_PIN]
     )
 
     cg.add(
-        var.set_dac_pin(
-            config[CONF_DAC_PIN]
-        )
+        var.set_adc_pin(adc_pin)
+    )
+
+    cg.add(
+        var.set_dac_pin(dac_pin)
     )
 
     cg.add(
