@@ -1,11 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import sensor
-
-from esphome.const import (
-    CONF_ID,
-)
+from esphome.const import CONF_ID
 
 esp32_adc_calibrate_ns = cg.esphome_ns.namespace(
     "esp32_adc_calibrate"
@@ -22,7 +18,6 @@ CONF_SAMPLES = "samples"
 CONF_SETTLE_MS = "settle_ms"
 CONF_RESTORE_FROM_FLASH = "restore_from_flash"
 CONF_CALIBRATE_ON_FIRST_BOOT = "calibrate_on_first_boot"
-CONF_SENSOR = "sensor"
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID():
@@ -57,11 +52,6 @@ CONFIG_SCHEMA = cv.Schema({
         default=True,
     ):
         cv.boolean,
-
-    cv.Required(CONF_SENSOR):
-        sensor.sensor_schema(
-            accuracy_decimals=2,
-        ),
 }).extend(
     cv.polling_component_schema("1s")
 )
@@ -75,14 +65,6 @@ async def to_code(config):
     await cg.register_component(
         var,
         config,
-    )
-
-    sens = await sensor.new_sensor(
-        config[CONF_SENSOR]
-    )
-
-    cg.add(
-        var.set_sensor(sens)
     )
 
     cg.add(
