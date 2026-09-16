@@ -1,7 +1,6 @@
 substitutions:
   adc_cal_pin: GPIO32
   adc_cal_dac_pin: GPIO25
-
   adc_cal_samples: "16"
   adc_cal_settle_ms: "5"
 
