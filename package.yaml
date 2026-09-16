@@ -1,7 +1,6 @@
 substitutions:
   adc_cal_pin: "35"
   adc_cal_dac_pin: "25"
-
   adc_cal_samples: "16"
   adc_cal_settle_ms: "5"
 
@@ -10,7 +9,7 @@ substitutions:
 external_components:
   - source:
       type: git
-      url: https://github.com/Youpimatin/esphome-esp32-adc-calibrate
+      url: https://github.com/TON_COMPTE/esphome-esp32-adc-calibrate
       ref: main
     components:
       - esp32_adc_calibrate
@@ -27,11 +26,6 @@ esp32_adc_calibrate:
 
   restore_from_flash: true
   calibrate_on_first_boot: ${adc_calibrate_on_first_boot}
-
-  sensor:
-    name: "Valeur DAC calibrée"
-    id: adc_dac_value
-    accuracy_decimals: 2
 
 button:
   - platform: template
