@@ -1,0 +1,44 @@
+substitutions:
+  adc_cal_pin: "35"
+  adc_cal_dac_pin: "25"
+
+  adc_cal_samples: "16"
+  adc_cal_settle_ms: "5"
+
+  adc_calibrate_on_first_boot: "true"
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/TON_COMPTE/esphome-esp32-adc-calibrate
+      ref: main
+    components:
+      - esp32_adc_calibrate
+    refresh: 1d
+
+esp32_adc_calibrate:
+  id: adc_calibrator
+
+  adc_pin: ${adc_cal_pin}
+  dac_pin: ${adc_cal_dac_pin}
+
+  samples: ${adc_cal_samples}
+  settle_ms: ${adc_cal_settle_ms}
+
+  restore_from_flash: true
+  calibrate_on_first_boot: ${adc_calibrate_on_first_boot}
+
+  sensor:
+    name: "Valeur DAC calibrée"
+    id: adc_dac_value
+    accuracy_decimals: 2
+
+button:
+  - platform: template
+    name: "Recalibrer ADC"
+    entity_category: config
+    icon: mdi:refresh
+
+    on_press:
+      - lambda: |-
+          id(adc_calibrator).start_calibration();
