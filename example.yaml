@@ -17,13 +17,6 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
-substitutions:
-  adc_cal_pin: "35"
-  adc_cal_dac_pin: "25"
-
-  adc_cal_samples: "16"
-  adc_cal_settle_ms: "5"
-
 packages:
   adc_calibration:
     url: https://github.com/Youpimatin/esphome-esp32-adc-calibrate
@@ -31,3 +24,18 @@ packages:
       - path: package.yaml
     ref: main
     refresh: 1d
+
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          float value = id(adc_calibrator).read();
+
+          if (!isnan(value)) {
+            ESP_LOGI(
+              "main",
+              "ADC linéarisé = %.2f",
+              value
+            );
+          }
